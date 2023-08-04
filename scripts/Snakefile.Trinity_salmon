@@ -1,0 +1,71 @@
+import os
+import glob
+
+inpath = "../nonhost_reads"
+outpath = "../Trinity/Trinity_Salmon/"
+
+sample_names=[]
+for name in glob.glob(inpath+"/*_non_host_reads_1.fastq.gz"):
+    ID = os.path.basename(name).split("_non")[0]
+    if ID not in sample_names:
+        sample_names.append(ID)
+
+rule all:
+    input:
+         fa = outpath+"Trinity.fasta"
+         genes = expand(outpath+"{sample}/quant.sf.genes", sample = sample_names),
+         iso = expand(outpath+"{sample}/quant.sf", sample = sample_names),
+         counts = outpath+"Noc_trinity_salmon_gene_transmap.isoform.counts.matrix"
+
+
+rule Trinity:
+    input:
+        read1 = expand(inpath+"/{sample}_non_host_reads_1.fastq.gz", sample=sample_names),
+         read2 = expand(inpath+"/{sample}_non_host_reads_2.fastq.gz", sample=sample_names)
+    output:
+         fa = outpath+"Trinity.fasta"
+    params: 
+         dir = directory(outpath)
+    conda:
+         "/home/mavheule/Snakeprograms/ymlfiles/trinity.yaml"
+    shell:"""
+         Trinity --seqType fq --max_memory 400G --CPU 20 --left {input.read1} --right {input.read2} --output {params.dir}
+         """
+
+rule abundance_est:
+    input:
+         read1 = inpath+"/{sample}_non_host_reads_1.fastq.gz",
+         read2 = inpath+"/{sample}_non_host_reads_2.fastq.gz"
+    output:
+         genes = outpath+"{sample}/quant.sf.genes",
+         iso = outpath+"{sample}/quant.sf"
+    params:
+         fa = outpath+"Trinity.fasta",
+         dir = directory(outpath+"{sample}") 
+    conda:
+         "/home/mavheule/Snakeprograms/ymlfiles/trinity.yaml"
+    shell:"""
+         align_and_estimate_abundance.pl --seqType fq --left {input.read1} --right {input.read2} --transcripts {params.fa}  --est_method salmon \
+         --trinity_mode --prep_reference --output_dir {params.dir}
+         """
+
+
+rule count_matrix_gene:
+    input:
+         iso = expand(outpath+"{sample}/quant.sf", sample=sample_names)
+    output:
+         counts = outpath+"trinity_salmon_gene_transmap.isoform.counts.matrix"
+    params:
+         pre = "trinity_salmon_gene_transmap",
+         genemap = outpath+"Trinity.fasta.gene_trans_map",
+         dir = directory(outpath)
+    conda:
+         "/home/mavheule/Snakeprograms/ymlfiles/trinity.yaml"
+    shell:"""
+         cd {params.dir}
+         abundance_estimates_to_matrix.pl --est_method salmon --gene_trans_map {params.genemap} --out_prefix {params.pre} --name_sample_by_basedir {input.iso}
+         """
+
+
+
+

@@ -1,0 +1,233 @@
+
+import os
+import glob
+
+inpath = "../raw_data/"
+outpath = "../"
+
+
+sample_names=[]
+for name in glob.glob(inpath+"*_R1.fastq.gz"):
+    ID = os.path.basename(name).split("_R1")[0]
+    if ID not in sample_names:
+        sample_names.append(ID)
+
+rule all:
+    input:
+         trimmed1 = expand(outpath+"trimmed/{sample}_R1_trim.fastq.gz", sample=sample_names),
+         trimmed2 = expand(outpath+"trimmed/{sample}_R2_trim.fastq.gz", sample=sample_names),
+         host1 = expand(outpath+"host_reads/{sample}_host_reads_1.fastq.gz", sample=sample_names),
+         host2 = expand(outpath+"host_reads/{sample}_host_reads_2.fastq.gz", sample=sample_names),
+         nonhost1 = expand(outpath+"nonhost_reads/{sample}_non_host_reads_1.fastq.gz", sample=sample_names),
+         nonhost2 = expand(outpath+"nonhost_reads/{sample}_non_host_reads_2.fastq.gz", sample=sample_names),
+         output = expand(outpath+"classified/{sample}.output.tsv", sample=sample_names),
+         report = expand(outpath+"classified/{sample}.report.tsv", sample=sample_names),
+         biom = outpath+"biom/Kraken_Noc_RNA.biom",
+         phytree = outpath+"biom/Kraken_Noc_RNA.phytree",
+         phylum = expand(outpath+"Bracken/Phylum/{sample}_bracken_phylum.tsv", sample=sample_names),
+         p_report = expand(outpath+"Bracken/Phylum/{sample}_bracken_p-report.tsv", sample=sample_names),
+         pcomb = outpath+"Bracken/Phylum/combined_phylum.Bracken.txt",
+         genus = expand(outpath+"Bracken/Genus/{sample}_bracken_genus.tsv", sample=sample_names),
+         g_report = expand(outpath+"Bracken/Genus/{sample}_bracken_g-report.tsv", sample=sample_names),
+         gcomb = outpath+"Bracken/Genus/combined_genus.Bracken.txt",
+         species = expand(outpath+"Bracken/Species/{sample}_bracken_species.tsv", sample=sample_names),
+         s_report = expand(outpath+"Bracken/Species/{sample}_bracken_s-report.tsv", sample=sample_names),
+         scomb = outpath+"Bracken/Species/combined_species.Bracken.txt",
+         multi_raw = outpath+"fastqc/rawReads/multiqc_report.html",
+         multi_trim = outpath+"fastqc/trimReads/multiqc_report.html"
+
+
+rule rawFastqc:
+    input:
+        i1 = expand(inpath+"{sample}_R1.fastq.gz", sample = sample_names),
+        i2 = expand(inpath+"{sample}_R2.fastq.gz", sample = sample_names)
+    output:
+        o1 = expand(outpath+"fastqc/rawReads/{sample}_R1_fastqc.html", sample = sample_names),
+        o2 = expand(outpath+"fastqc/rawReads/{sample}_R2_fastqc.html", sample = sample_names)
+    params:
+        dir = directory(outpath+"fastqc/rawReads/")
+    conda:
+        "~/Snakeprograms/ymlfiles/multiqc.yml"
+    shell:"""
+        fastqc -o {params.dir} {input.i1} {input.i2}
+         """
+
+rule rawMultiqc:
+    input:
+        fc1 = expand(outpath+"fastqc/rawReads/{sample}_R1_fastqc.html", sample = sample_names),
+        fc2 = expand(outpath+"fastqc/rawReads/{sample}_R2_fastqc.html", sample = sample_names)
+    output:
+        multi_raw = outpath+"fastqc/rawReads/multiqc_report.html"
+    params:
+        dir = directory(outpath+"fastqc/rawReads/")
+    conda:
+        "~/Snakeprograms/ymlfiles/multiqc.yml"
+    shell:"""
+        cd {params.dir}
+        multiqc .
+        """
+       
+
+rule trimmomatic:
+    input:
+         read1 = inpath+"{sample}_R1.fastq.gz",
+         read2 = inpath+"{sample}_R2.fastq.gz"
+    output:
+         trimmed1 = outpath+"trimmed/{sample}_R1_trim.fastq.gz",
+         se1 = outpath+"trimmed/{sample}_R1_se.fastq.gz",
+         trimmed2 = outpath+"trimmed/{sample}_R2_trim.fastq.gz",
+         se2 =  outpath+"trimmed/{sample}_R2_se.fastq.gz"
+    params: adaptor = "~/Genome/Trimmomatic_adaptor_fasta/all_illumina_trimmomatic_2022Aug01.fa"
+    conda:
+         "~/Snakeprograms/ymlfiles/trimmomatic.yaml"
+    shell:"""
+         trimmomatic PE -quiet {input.read1} {input.read2} {output.trimmed1} {output.se1} {output.trimmed2} {output.se2}\
+         ILLUMINACLIP:{params.adaptor}:2:40:15 LEADING:2 TRAILING:2 HEADCROP:15 SLIDINGWINDOW:4:15 MINLEN:50
+         """
+
+
+rule trimFastqc:
+    input:
+        trimmed1 = expand(outpath+"trimmed/{sample}_R1_trim.fastq.gz", sample = sample_names),
+        trimmed2 = expand(outpath+"trimmed/{sample}_R2_trim.fastq.gz", sample = sample_names)
+    output:
+        qctrim1 = expand(outpath+"fastqc/trimReads/{sample}_R1_trim_fastqc.html", sample = sample_names),
+        qctrim2 = expand(outpath+"fastqc/trimReads/{sample}_R2_trim_fastqc.html", sample = sample_names)
+    params:
+        dir = directory(outpath+"fastqc/trimReads/")
+    conda:
+        "~/Snakeprograms/ymlfiles/multiqc.yml"
+    shell:"""
+        fastqc -o {params.dir} {input.trimmed1} {input.trimmed2}
+         """
+
+rule trimMultiqc:
+    input:
+        qctrim1 = expand(outpath+"fastqc/trimReads/{sample}_R1_trim_fastqc.html", sample = sample_names),
+        qctrim2 = expand(outpath+"fastqc/trimReads/{sample}_R2_trim_fastqc.html", sample = sample_names)
+    output:
+        multi_trim = outpath+"fastqc/trimReads/multiqc_report.html"
+    params:
+        dir = directory(outpath+"fastqc/trimReads/")
+    conda:
+        "~/Snakeprograms/ymlfiles/multiqc.yml"
+    shell:"""
+        cd {params.dir}
+        multiqc .
+        """
+
+
+rule kraken_sort:
+    input:
+         trimmed1 = outpath+"trimmed/{sample}_R1_trim.fastq.gz",
+         trimmed2 = outpath+"trimmed/{sample}_R2_trim.fastq.gz"
+    output:
+         host1 = outpath+"host_reads/{sample}_host_reads_1.fastq.gz",
+         host2 = outpath+"host_reads/{sample}_host_reads_2.fastq.gz",
+         nonhost1 = outpath+"nonhost_reads/{sample}_non_host_reads_1.fastq.gz",
+         nonhost2 = outpath+"nonhost_reads/{sample}_non_host_reads_2.fastq.gz"
+    params:
+         db = "~/ref_files/Horse_and_PhiX_db",
+         host = outpath+"host_reads/{sample}_host_reads#.fastq", 
+         nonhost = outpath+"nonhost_reads/{sample}_non_host_reads#.fastq",
+         host1 = outpath+"host_reads/{sample}_host_reads_1.fastq",
+         host2 = outpath+"host_reads/{sample}_host_reads_2.fastq",
+         nonhost1 = outpath+"nonhost_reads/{sample}_non_host_reads_1.fastq",
+         nonhost2 = outpath+"nonhost_reads/{sample}_non_host_reads_2.fastq"
+    shell:"""
+         kraken2 --threads 5 --db {params.db} --gzip-compressed --classified-out {params.host} --unclassified-out {params.nonhost} --paired {input.trimmed1} {input.trimmed2}
+         pigz -f {params.host1} > {output.host1}
+         pigz -f {params.host2} > {output.host2}
+         pigz -f {params.nonhost1} > {output.nonhost1}
+         pigz -f {params.nonhost2} > {output.nonhost2}
+         """
+
+
+rule kraken_classify:
+    input:
+         nonhost1 = outpath+"nonhost_reads/{sample}_non_host_reads_1.fastq.gz",
+         nonhost2 = outpath+"nonhost_reads/{sample}_non_host_reads_2.fastq.gz"
+    output:
+         output = outpath+"classified/{sample}.output.tsv",
+         report = outpath+"classified/{sample}.report.tsv"
+    params:
+         db = "~/ref_files/Bracken_db"
+    shell:"""
+         kraken2 --threads 5 --db {params.db} --report-zero-counts --gzip-compressed --output {output.output} --report {output.report} --use-names --paired {input.nonhost1} {input.nonhost2}
+         """
+
+rule kraken_biom:
+    input:
+         report = expand(outpath+"classified/{sample}.report.tsv", sample = sample_names)
+    output:
+         biom = outpath+"biom/Kraken_Noc_RNA.biom",
+         phytree = outpath+"biom/Kraken_Noc_RNA.phytree"
+    params:
+         meta = "Metadata_forKrakenBiom.txt"
+    shell:"""
+         kraken-biom --fmt json -m {params.meta} -o {output.biom} --otu_fp {output.phytree} {input.report}
+         """
+
+rule Bracken_phylum:
+    input:
+         report = outpath+"classified/{sample}.report.tsv"
+    output:
+         phylum = outpath+"Bracken/Phylum/{sample}_bracken_phylum.tsv",
+         p_report = outpath+"Bracken/Phylum/{sample}_bracken_p-report.tsv"  
+    params: 
+         db = "~/ref_files/Bracken_db"
+    shell:"""
+         bracken -d {params.db} -i {input.report} -o {output.phylum} -w {output.p_report} -r 150 -l P -t 5
+         """
+
+rule combine_phylum:
+    input:
+         phylum = expand(outpath+"Bracken/Phylum/{sample}_bracken_phylum.tsv", sample = sample_names)
+    output:
+         pcomb = outpath+"Bracken/Phylum/combined_phylum.Bracken.txt"
+    shell:"""
+         combine_bracken_outputs.py --files {input.phylum} --output {output.pcomb}
+         """ 
+
+rule Bracken_genus:
+    input:
+         report = outpath+"classified/{sample}.report.tsv"
+    output:
+         genus = outpath+"Bracken/Genus/{sample}_bracken_genus.tsv",
+         g_report = outpath+"Bracken/Genus/{sample}_bracken_g-report.tsv"
+    params:
+         db = "~/ref_files/Bracken_db"
+    shell:"""
+         bracken -d {params.db} -i {input.report} -o {output.genus} -w {output.g_report} -r 150 -l G -t 5
+         """
+
+rule combine_genus:
+    input:
+         genus = expand(outpath+"Bracken/Genus/{sample}_bracken_genus.tsv", sample = sample_names)
+    output:
+         gcomb = outpath+"Bracken/Genus/combined_genus.Bracken.txt"
+    shell:"""
+         combine_bracken_outputs.py --files {input.genus} --output {output.gcomb}
+         """
+
+rule Bracken_species:
+    input:
+         report = outpath+"classified/{sample}.report.tsv"
+    output:
+         species = outpath+"Bracken/Species/{sample}_bracken_species.tsv",
+         s_report = outpath+"Bracken/Species/{sample}_bracken_s-report.tsv"
+    params:
+         db = "~/ref_files/Bracken_db"
+    shell:"""
+         bracken -d {params.db} -i {input.report} -o {output.species} -w {output.s_report} -r 150 -l S -t 5
+         """
+
+rule combine_species:
+    input:
+         species = expand(outpath+"Bracken/Species/{sample}_bracken_species.tsv", sample = sample_names)
+    output:
+         scomb = outpath+"Bracken/Species/combined_species.Bracken.txt"
+    shell:"""
+         combine_bracken_outputs.py --files {input.species} --output {output.scomb}
+         """
+

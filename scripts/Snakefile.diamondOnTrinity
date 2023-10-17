@@ -1,0 +1,48 @@
+import os
+import glob
+
+inpath = "/home/mavheule/Try_Trim_More_Kraken_Strep/Trinity/Trinity_Salmon/"
+outpath = "/home/mavheule/Try_Trim_More_Kraken_Strep/Diamond_Trinity/"
+
+#sample_names=[]
+#for name in glob.glob(inpath+"*_non_host_reads_1.fastq.gz"):
+#    ID = os.path.basename(name).split("_non")[0]
+#    if ID not in sample_names:
+#        sample_names.append(ID)
+
+rule all:
+    input:
+         da = outpath+"Diamond_output/Trinity.daa",
+         txt = outpath+"Diamond_text/Trinity_diamond.txt"
+
+
+rule diamond:
+    input:
+         fa = inpath+"Trinity.fasta"
+    output:
+         da = outpath+"Diamond_output/Trinity.daa"
+    params:
+         db = "/home/mavheule/Diamond_db/nr",
+         dbm = "/home/mavheule/Diamond_db/megan-map-Feb2022.db",
+         cont = "/home/mavheule/Diamond_db/contaminants.txt"
+    conda:
+         "/home/mavheule/Snakeprograms/ymlfiles/megan.yml"
+    shell:"""
+         diamond blastx -d {params.db} -q {input.fa} -o {output.da} -f 100
+         daa-meganizer -i {output.da} -mdb {params.dbm} -cf {params.cont}
+         """
+
+
+rule convert:
+    input:
+         da = outpath+"Diamond_output/Trinity.daa"
+    output:
+         txt = outpath+"Diamond_text/Trinity_diamond.txt"
+    conda:
+         "/home/mavheule/Snakeprograms/ymlfiles/megan.yml"
+    shell:
+        """
+        daa2info --in {input.da} --out {output.txt} --class2count EC EGGNOG GTDB INTERPRO2GO KEGG SEED Taxonomy \
+        --read2class EC EGGNOG GTDB INTERPRO2GO KEGG SEED Taxonomy -l true -m true --names true
+        """
+

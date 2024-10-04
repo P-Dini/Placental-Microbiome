@@ -1,0 +1,95 @@
+import os
+import glob
+import sys
+
+inpath = "../data/original_reads_with_strep_equi/"
+outpath = "../data/output_40kbp_10kscalled_ALLreads/"
+
+SAMPLES=[]
+for name in glob.glob(os.path.join(inpath, "*_1.fastq")):
+    ID = os.path.basename(name).split("_1")[0]
+    if ID not in SAMPLES:
+        SAMPLES.append(ID)
+
+print('samples are:', SAMPLES, file=sys.stderr)
+
+rule all:
+    input:
+        sign = expand(outpath+"../output_50kbp_10kscalled_ALLreads/signatures/{sample}-reads.sig", sample=SAMPLES),
+        matrix = outpath+"../output_50kbp_10kscalled_ALLreads/compare/Noc_comp",
+        fastgather = expand(outpath+"../output_50kbp_10kscalled_ALLreads/fastgather/{sample}_fastgather.csv", sample=SAMPLES),
+        gather = expand(outpath+"../output_50kbp_10kscalled_ALLreads/gather/{sample}_gather.csv", sample=SAMPLES),
+        tax = expand(outpath+"../output_50kbp_10kscalled_ALLreads/tax_annotated/{sample}_gather.with-lineages.csv", sample=SAMPLES)
+
+rule sketch_signatures:
+    input:
+         read1 = inpath+"{sample}_1.fastq",
+         read2 = inpath+"{sample}_2.fastq"
+    output:
+          sign = outpath+"../output_50kbp_10kscalled_ALLreads/signatures/{sample}-reads.sig"
+    params:
+          merge = "{sample}"
+    conda:
+         "sourmash.yaml"
+    shell:"""
+         sourmash sketch dna -p k=51,scaled=1000,abund --merge {params.merge} -o {output.sign} {input.read1} {input.read2}
+         """
+
+rule sourmash_compare:
+    input:
+         sign = expand(outpath+"../output_50kbp_10kscalled_ALLreads/signatures/{sample}-reads.sig", sample = SAMPLES)
+    output:
+         matrix = outpath+"../output_50kbp_10kscalled_ALLreads/compare/Noc_comp"
+    params:
+         csv = outpath+"../output_50kbp_10kscalled_ALLreads/compare/Noc_comp.csv"
+    conda:
+         "sourmash.yaml"
+    shell:"""
+         sourmash compare {input.sign} --output {output.matrix} -k 51 --csv {params.csv}
+         """
+
+rule sourmash_fastgather:
+    input:
+         wort = outpath+"../output_50kbp_10kscalled_ALLreads/signatures/{sample}-reads.sig",
+         against = "/home/hfm/EquinePlacenta/Metatranscriptomics/Sourmash_db/complete-list.gtdb-reps-rs214-k51.txt",
+    output:
+         csv = outpath+"../output_50kbp_10kscalled_ALLreads/fastgather/{sample}_fastgather.csv"
+    log:
+         outpath+"../output_50kbp_10kscalled_ALLreads/logs/{sample}_fastgather.log"
+    resources:
+         rayon_exclude = 1
+    threads: 128
+    conda:
+         "sourmash.yaml"
+    shell: """
+          /usr/bin/time -v sourmash scripts fastgather {input.wort} {input.against} \
+             -o {output.csv} --threshold-bp 50000 -k 51 --scaled 10000 -c {threads} 2>&1 > {log}
+           """
+
+rule sourmash_gather:
+    input:
+         sign = outpath+"../output_50kbp_10kscalled_ALLreads/signatures/{sample}-reads.sig",
+         db = "/home/hfm/EquinePlacenta/Metatranscriptomics/Sourmash_db/gtdb-reps-rs214-k51.zip",
+         picklist = outpath+"../output_50kbp_10kscalled_ALLreads/fastgather/{sample}_fastgather.csv"
+    output:
+         csv = outpath+"../output_50kbp_10kscalled_ALLreads/gather/{sample}_gather.csv"
+    conda:
+         "sourmash.yaml"
+    shell:"""
+         sourmash gather {input.sign} {input.db} -k 51 --threshold-bp 50000 --scaled 10000 --no-fail-on-empty-database \
+            --picklist {input.picklist}:match_md5:md5 -o {output.csv}
+         """
+
+rule sourmash_tax:
+    input:
+         gather = outpath+"../output_50kbp_10kscalled_ALLreads/gather/{sample}_gather.csv"
+    output:
+         tax = outpath+"../output_50kbp_10kscalled_ALLreads/tax_annotated/{sample}_gather.with-lineages.csv"
+    params:
+         db = expand("/home/hfm/EquinePlacenta/Metatranscriptomics/Sourmash_db/lineages/genbank-2022.03-{db}.lineages.csv.gz", db = ["archaea", "bacteria", "fungi", "viral", "protozoa"]),
+         dir = directory(outpath+"tax_annotated/")
+    conda:
+         "sourmash.yaml"
+    shell:"""
+         sourmash tax annotate -g {input.gather} -t {params.db} -o {params.dir}
+         """

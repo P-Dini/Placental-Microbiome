@@ -1,0 +1,159 @@
+import os
+import glob
+import sys
+
+inpath = "../data/original_reads_with_strep_equi/"
+outpath = "../data/output_kraken2/Modified_Mock_GTDBr214_Default_min50reads/"
+
+SAMPLES=[]
+for name in glob.glob(os.path.join(inpath, "*_1.fastq")):
+    ID = os.path.basename(name).split("_1")[0]
+    if ID not in SAMPLES:
+        SAMPLES.append(ID)
+
+print('samples are:', SAMPLES, file=sys.stderr)
+
+rule all:
+    input:
+        output = expand(outpath+"classified/{sample}.output.tsv", sample=SAMPLES),
+        report = expand(outpath+"classified/{sample}.report.tsv", sample=SAMPLES),
+        biom = outpath+"biom/Kraken_Noc_RNA.biom",
+        phytree = outpath+"biom/Kraken_Noc_RNA.phytree",
+        phylum = expand(outpath+"Bracken/Phylum/{sample}_bracken_phylum.tsv", sample=SAMPLES),
+        p_report = expand(outpath+"Bracken/Phylum/{sample}_bracken_p-report.tsv", sample=SAMPLES),
+        pcomb = outpath+"Bracken/Phylum/combined_phylum.Bracken.txt",
+        genus = expand(outpath+"Bracken/Genus/{sample}_bracken_genus.tsv", sample=SAMPLES),
+        g_report = expand(outpath+"Bracken/Genus/{sample}_bracken_g-report.tsv", sample=SAMPLES),
+        gcomb = outpath+"Bracken/Genus/combined_genus.Bracken.txt",
+        species = expand(outpath+"Bracken/Species/{sample}_bracken_species.tsv", sample=SAMPLES),
+        s_report = expand(outpath+"Bracken/Species/{sample}_bracken_s-report.tsv", sample=SAMPLES),
+        scomb = outpath+"Bracken/Species/combined_species.Bracken.txt",
+        domain = expand(outpath+"Bracken/Domain/{sample}_bracken_domain.tsv", sample=SAMPLES),
+        d_report = expand(outpath+"Bracken/Domain/{sample}_bracken_d-report.tsv", sample=SAMPLES),
+        dcomb = outpath+"Bracken/Domain/combined_domain.Bracken.txt",
+
+
+rule kraken_classify:
+    input:
+         nonhost1 = inpath+"{sample}_1.fastq",
+         nonhost2 = inpath+"{sample}_2.fastq"
+    output:
+         output = outpath+"classified/{sample}.output.tsv",
+         report = outpath+"classified/{sample}.report.tsv"
+    params:
+        db = "/home/hfm/EquinePlacenta/Metatranscriptomics/GTDB_db/GTDB_214_db"
+    shell:"""
+         kraken2 --threads 16 --db {params.db} --report-zero-counts --output {output.output} --report {output.report} --use-names --paired {input.nonhost1} {input.nonhost2}
+         """
+
+rule kraken_biom:
+    input:
+         report = expand(outpath+"classified/{sample}.report.tsv", sample = SAMPLES)
+    output:
+         biom = outpath+"biom/Kraken_Noc_RNA.biom",
+         phytree = outpath+"biom/Kraken_Noc_RNA.phytree"
+    conda:
+         "/home/hfm/yaml/bracken.yaml"
+    shell:"""
+         kraken-biom --fmt json -o {output.biom} --otu_fp {output.phytree} {input.report}
+         """
+
+rule Bracken_phylum:
+    input:
+         report = outpath+"classified/{sample}.report.tsv"
+    output:
+         phylum = outpath+"Bracken/Phylum/{sample}_bracken_phylum.tsv",
+         p_report = outpath+"Bracken/Phylum/{sample}_bracken_p-report.tsv"
+    params:
+         db = "/home/hfm/EquinePlacenta/Metatranscriptomics/GTDB_db/GTDB_214_db"
+    conda:
+         "/home/hfm/yaml/bracken.yaml"
+    shell:"""
+         bracken -d {params.db} -i {input.report} -o {output.phylum} -w {output.p_report} -r 150 -l P -t 50
+         """
+
+rule combine_phylum:
+    input:
+         phylum = expand(outpath+"Bracken/Phylum/{sample}_bracken_phylum.tsv", sample = SAMPLES)
+    output:
+         pcomb = outpath+"Bracken/Phylum/combined_phylum.Bracken.txt"
+    conda:
+         "/home/hfm/yaml/bracken.yaml"
+    shell:"""
+         combine_bracken_outputs.py --files {input.phylum} --output {output.pcomb}
+         """
+
+rule Bracken_genus:
+    input:
+         report = outpath+"classified/{sample}.report.tsv"
+    output:
+         genus = outpath+"Bracken/Genus/{sample}_bracken_genus.tsv",
+         g_report = outpath+"Bracken/Genus/{sample}_bracken_g-report.tsv"
+    params:
+         db = "/home/hfm/EquinePlacenta/Metatranscriptomics/GTDB_db/GTDB_214_db"
+    conda:
+         "/home/hfm/yaml/bracken.yaml"
+    shell:"""
+         bracken -d {params.db} -i {input.report} -o {output.genus} -w {output.g_report} -r 150 -l G -t 50
+         """
+
+rule combine_genus:
+    input:
+         genus = expand(outpath+"Bracken/Genus/{sample}_bracken_genus.tsv", sample = SAMPLES)
+    output:
+         gcomb = outpath+"Bracken/Genus/combined_genus.Bracken.txt"
+    conda:
+         "/home/hfm/yaml/bracken.yaml"
+    shell:"""
+         combine_bracken_outputs.py --files {input.genus} --output {output.gcomb}
+         """
+
+rule Bracken_species:
+    input:
+         report = outpath+"classified/{sample}.report.tsv"
+    output:
+         species = outpath+"Bracken/Species/{sample}_bracken_species.tsv",
+         s_report = outpath+"Bracken/Species/{sample}_bracken_s-report.tsv"
+    params:
+         db = "/home/hfm/EquinePlacenta/Metatranscriptomics/GTDB_db/GTDB_214_db"
+    conda:
+         "/home/hfm/yaml/bracken.yaml"
+    shell:"""
+         bracken -d {params.db} -i {input.report} -o {output.species} -w {output.s_report} -r 150 -l S -t 50
+         """
+
+rule combine_species:
+    input:
+         species = expand(outpath+"Bracken/Species/{sample}_bracken_species.tsv", sample = SAMPLES)
+    output:
+         scomb = outpath+"Bracken/Species/combined_species.Bracken.txt"
+    conda:
+         "/home/hfm/yaml/bracken.yaml"
+    shell:"""
+         combine_bracken_outputs.py --files {input.species} --output {output.scomb}
+         """
+
+rule Bracken_domain:
+    input:
+         report = outpath+"classified/{sample}.report.tsv"
+    output:
+         domain = outpath+"Bracken/Domain/{sample}_bracken_domain.tsv",
+         d_report = outpath+"Bracken/Domain/{sample}_bracken_d-report.tsv"
+    params:
+         db = "/home/hfm/EquinePlacenta/Metatranscriptomics/GTDB_db/GTDB_214_db"
+    conda:
+         "/home/hfm/yaml/bracken.yaml"
+    shell:"""
+         bracken -d {params.db} -i {input.report} -o {output.domain} -w {output.d_report} -r 150 -l D -t 50
+         """
+
+rule combine_domain:
+    input:
+         domain = expand(outpath+"Bracken/Domain/{sample}_bracken_domain.tsv", sample = SAMPLES)
+    output:
+         dcomb = outpath+"Bracken/Domain/combined_domain.Bracken.txt"
+    conda:
+         "/home/hfm/yaml/bracken.yaml"
+    shell:"""
+         combine_bracken_outputs.py --files {input.domain} --output {output.dcomb}
+         """

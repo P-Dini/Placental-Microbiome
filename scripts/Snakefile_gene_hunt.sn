@@ -1,0 +1,104 @@
+import os
+import glob
+import sys
+
+inpath = "/home/hfm/EquinePlacenta/Metatranscriptomics/nonhost_reads/"
+outpath = "/home/hfm/EquinePlacenta/hisat2/"
+
+SAMPLES=[]
+for name in glob.glob(os.path.join(inpath, "*_non_host_reads_1.fastq.gz")):
+    ID = os.path.basename(name).split("_non_host_reads_1")[0]
+    if ID not in SAMPLES:
+        SAMPLES.append(ID)
+
+print('samples are:', SAMPLES, file=sys.stderr)
+
+rule all:
+    input:
+         aligment = expand(outpath+"aligned_reads/{sample}_aligned_reads.sam", sample=SAMPLES),
+         sam_to_bam = expand(outpath+"aligned_reads/{sample}_aligned_reads.bam", sample=SAMPLES),
+         bam_sort = expand(outpath+"aligned_reads/{sample}_aligned_reads_sorted.bam", sample=SAMPLES),
+         bam_to_fastq = expand(outpath+"aligned_reads/{sample}_aligned_reads.fastq", sample=SAMPLES),
+         deinterleave_fastq1 = expand(outpath+"aligned_reads/{sample}_aligned_reads_1.fastq", sample=SAMPLES),
+         deinterleave_fastq2 = expand(outpath+"aligned_reads/{sample}_aligned_reads_2.fastq", sample=SAMPLES),
+         trinity = expand(outpath+"{sample}_Trinity", sample=SAMPLES),
+         prokka = expand(outpath+"{sample}_Prokka", sample=SAMPLES)
+
+rule alignment:
+    input:
+         nonhost1 = inpath+"{sample}_non_host_reads_1.fastq.gz",
+         nonhost2 = inpath+"{sample}_non_host_reads_2.fastq.gz"
+    output:
+         sam = outpath+"aligned_reads/{sample}_aligned_reads.sam"
+    params:
+         db = "/home/hfm/EquinePlacenta/hisat2/index/Strep_output_prefix"
+    conda:
+         "/home/hfm/yaml/hisat2.yaml"
+    shell:"""
+         hisat2 -x {params.db} -1 {input.nonhost1} -2 {input.nonhost2} -S {output.sam}
+         """
+
+rule sam_to_bam:
+    input:
+         sam = outpath+"aligned_reads/{sample}_aligned_reads.sam"
+    output:
+         bam = outpath+"aligned_reads/{sample}_aligned_reads.bam"
+    conda:
+         "/home/hfm/yaml/samtools.yaml"
+    shell:"""
+         samtools view -bS -F 4 {input} > {output}
+         """
+
+rule bam_sort:
+    input:
+         bam = outpath+"aligned_reads/{sample}_aligned_reads.bam"
+    output:
+         sorted = outpath+"aligned_reads/{sample}_aligned_reads_sorted.bam"
+    conda:
+         "/home/hfm/yaml/samtools.yaml"
+    shell:"""
+         samtools sort {input} -o {output}
+         """
+
+rule bam_to_fastq:
+    input:
+         bam = outpath+"aligned_reads/{sample}_aligned_reads_sorted.bam"
+    output:
+         fastq = outpath+"aligned_reads/{sample}_aligned_reads.fastq"
+    conda:
+         "/home/hfm/yaml/samtools.yaml"
+    shell:"""
+         samtools fastq {input} > {output}
+         """
+
+rule deinterleave_fastq:
+    input:
+        fastq = outpath+"aligned_reads/{sample}_aligned_reads.fastq"
+    output:
+        fastq1 = outpath+"aligned_reads/{sample}_aligned_reads_1.fastq",
+        fastq2 = outpath+"aligned_reads/{sample}_aligned_reads_2.fastq"
+    shell:"""
+         python deinterleave_fastq.py {input.fastq} {output.fastq1} {output.fastq2}
+         """
+
+rule trinity:
+    input:
+        bam = outpath+"aligned_reads/{sample}_aligned_reads_sorted.bam"
+    output:
+        dir = directory(outpath+"{sample}_Trinity")
+    conda:
+        "/home/hfm/yaml/trinity.yaml"
+    shell:"""
+         Trinity --genome_guided_bam {input.bam} --CPU 128 --max_memory 300G --genome_guided_max_intron 5000 --output {output.dir}
+         """
+
+rule prokka:
+     input:
+        fa = outpath+"{sample}_Trinity/Trinity-GG.fasta"
+     output:
+        dir = directory(outpath+"{sample}_Prokka")
+     conda:
+        "/home/hfm/yaml/prokka.yaml"
+     shell:"""
+          prokka --outdir {output.dir} --prefix {wildcards.sample} --kingdom Bacteria {input.fa}
+          """

@@ -1,0 +1,32 @@
+import os
+import glob
+import sys
+
+inpath = "/home/hfm/EquinePlacenta/hisat2/Equus_caballus_gene_hunt/unaligned_reads/"
+outpath = "/home/hfm/EquinePlacenta/hisat2/Strep_equi_zooepidemicus_gene_hunt/"
+
+SAMPLES=[]
+for name in glob.glob(os.path.join(inpath, "*_unmapped_reads.1.fastq")):
+    ID = os.path.basename(name).split("_unmapped_reads.1")[0]
+    if ID not in SAMPLES:
+        SAMPLES.append(ID)
+
+print('samples are:', SAMPLES, file=sys.stderr)
+
+rule all:
+    input:
+         aligment = expand(outpath+"aligned_reads/{sample}_aligned_reads.sam", sample=SAMPLES)
+
+rule alignment:
+    input:
+         nonhost1 = inpath+"{sample}_unmapped_reads.1.fastq",
+         nonhost2 = inpath+"{sample}_unmapped_reads.2.fastq"
+    output:
+         sam = outpath+"aligned_reads/{sample}_aligned_reads.sam"
+    params:
+         db = "/home/hfm/EquinePlacenta/hisat2/Strep_equi_zooepidemicus_gene_hunt/index/Strep_output_prefix"
+    conda:
+         "/home/hfm/yaml/hisat2.yaml"
+    shell:"""
+         hisat2 -x {params.db} -1 {input.nonhost1} -2 {input.nonhost2} -S {output.sam} --score-min L,0,-0.7 -k 5 
+         """
